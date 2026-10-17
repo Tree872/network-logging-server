@@ -1,5 +1,6 @@
 // File: main.go
 // Description: This file contains the main entry point for the network logging server application.
+
 package main
 
 import (
@@ -12,57 +13,60 @@ import (
 	"syscall"
 
 	"network-logging-server/internal/config"
+	"network-logging-server/internal/server"
 )
 
 func main() {
-	// Define a command-line flag for the configuration file path
-	configPath := flag.String(
+	var configPath *string
+	configPath = flag.String(
 		"config",
 		"config/server.conf",
 		"Path to the server configuration file",
 	)
 	flag.Parse()
-	// Load the server configuration from the specified file
-	serverConfig, err := config.Load(*configPath)
+
+	var serverConfig config.Config
+	var err error
+
+	serverConfig, err = config.Load(*configPath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Configuration error: %v\n", err)
 		os.Exit(1)
 	}
 
-	// Create the address string for the TCP listener
-	address := net.JoinHostPort(
+	var address string
+	address = net.JoinHostPort(
 		serverConfig.Host,
 		fmt.Sprintf("%d", serverConfig.Port),
 	)
 
-	// Start listening for incoming TCP connections
-	listener, err := net.Listen("tcp", address)
+	var listener net.Listener
+	listener, err = net.Listen("tcp", address)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to start TCP listener: %v\n", err)
 		os.Exit(1)
 	}
 
-	fmt.Printf("Network logging server started.\n")
+	fmt.Println("Network logging server started.")
 	fmt.Printf("Listening on TCP %s\n", listener.Addr().String())
 	fmt.Printf("Configuration: %s\n", *configPath)
 	fmt.Printf("Log file: %s\n", serverConfig.LogFile)
 	fmt.Printf("Output format: %s\n", serverConfig.LogFormat)
-	fmt.Printf("Press Ctrl+C to stop.\n")
+	fmt.Println("Press Ctrl+C to stop.")
 
-	shutdownContext, stopSignal := signal.NotifyContext(
+	var shutdownContext context.Context
+	var stopSignal context.CancelFunc
+
+	shutdownContext, stopSignal = signal.NotifyContext(
 		context.Background(),
 		os.Interrupt,
 		syscall.SIGTERM,
 	)
 	defer stopSignal()
 
-	<-shutdownContext.Done()
-
-	fmt.Println("\nShutdown signal received.")
-
-	err = listener.Close()
+	err = server.Run(listener, shutdownContext)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to close TCP listener: %v\n", err)
+		fmt.Fprintf(os.Stderr, "Server error: %v\n", err)
 		os.Exit(1)
 	}
 
