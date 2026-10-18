@@ -1,3 +1,0 @@
-{"timestamp":"2026-10-18T00:47:20.1235227Z","clientId":"client-001","level":"ALERT","service":"testclient","message":"this is a test","requestId":"test-001"}
-{"timestamp":"2026-10-18T01:17:27.0858243Z","clientId":"client-001","level":"ERROR","service":"Test1","message":"ratelimit test","requestId":"test-001"}
-{"timestamp":"2026-10-18T01:17:59.4435067Z","clientId":"client-002","level":"ALERT","service":"test","message":"RATE LIMIT TEST","requestId":"test-001"}
