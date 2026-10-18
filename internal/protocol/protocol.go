@@ -1,6 +1,8 @@
 // File: protocol.go
 // Description: This file contains the protocol definitions and functions for parsing requests and writing responses.
 // It defines the Request and Response structures, as well as functions to parse incoming requests and write responses in JSON format.
+// Author: Tri Phan
+// SENG2045_A2
 package protocol
 
 import (

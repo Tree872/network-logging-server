@@ -1,6 +1,8 @@
 // File: server.go
 // Description: This file contains the server logic for the network logging server application.
 // It handles incoming TCP connections, manages client handlers, and ensures graceful shutdown.
+// Author: Tri Phan
+// SENG2045_A2
 package server
 
 import (

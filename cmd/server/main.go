@@ -1,5 +1,7 @@
 // File: main.go
 // Description: This file contains the main entry point for the network logging server application.
+// Author: Tri Phan
+// SENG2045_A2
 
 package main
 

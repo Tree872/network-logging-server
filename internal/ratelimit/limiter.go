@@ -1,5 +1,7 @@
 // File: limiter.go
 // Description: This file contains the implementation of a rate limiter for the network logging server.
+// Author: Tri Phan
+// SENG2045_A2
 package ratelimit
 
 import (

@@ -1,5 +1,7 @@
 // File: config.go
 // Description: This file contains the configuration loading and validation logic for the network logging server.
+// Author: Tri Phan
+// SENG2045_A2
 package config
 
 import (

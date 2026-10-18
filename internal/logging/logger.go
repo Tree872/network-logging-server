@@ -1,6 +1,8 @@
 // File: internal/logging/logger.go
 // Description: This file contains the Logger implementation for the network logging server.
 // It provides functionality to write log entries to a file in either text or JSONL format, ensuring thread-safe access to the log file.
+// Author: Tri Phan
+// SENG2045_A2
 package logging
 
 import (
