@@ -18,7 +18,6 @@ type Config struct {
 	Port                   int
 	LogFile                string
 	LogFormat              string
-	MinimumLevel           string
 	MaxMessageSize         int
 	RateLimitMessages      int
 	RateLimitWindowSeconds int
@@ -116,7 +115,6 @@ func Load(configPath string) (Config, error) {
 		"port":                      true,
 		"log_file":                  true,
 		"log_format":                true,
-		"minimum_level":             true,
 		"max_message_size":          true,
 		"rate_limit_messages":       true,
 		"rate_limit_window_seconds": true,
@@ -134,7 +132,6 @@ func Load(configPath string) (Config, error) {
 		"port",
 		"log_file",
 		"log_format",
-		"minimum_level",
 		"max_message_size",
 		"rate_limit_messages",
 		"rate_limit_window_seconds",
@@ -154,7 +151,6 @@ func Load(configPath string) (Config, error) {
 	config.Host = values["host"]
 	config.LogFile = values["log_file"]
 	config.LogFormat = values["log_format"]
-	config.MinimumLevel = values["minimum_level"]
 
 	config.Port, err = strconv.Atoi(values["port"])
 	if err != nil {
@@ -221,21 +217,6 @@ func (config Config) Validate() error {
 
 	if config.LogFormat != "text" && config.LogFormat != "jsonl" {
 		return fmt.Errorf("log_format must be text or jsonl")
-	}
-
-	var validLevels map[string]bool = map[string]bool{
-		"EMERGENCY": true,
-		"ALERT":     true,
-		"CRITICAL":  true,
-		"ERROR":     true,
-		"WARNING":   true,
-		"NOTICE":    true,
-		"INFO":      true,
-		"DEBUG":     true,
-	}
-
-	if !validLevels[config.MinimumLevel] {
-		return fmt.Errorf("minimum_level is not a supported severity")
 	}
 
 	if config.MaxMessageSize < 1 || config.MaxMessageSize > MaxProtocolMessageSize {
