@@ -25,7 +25,7 @@ const (
 )
 
 const (
-	StatusValidMessage    = "VALID_MESSAGE"
+	StatusOK              = "OK"
 	StatusInvalidMessage  = "INVALID_MESSAGE"
 	StatusMessageTooLarge = "MESSAGE_TOO_LARGE"
 	StatusInternalError   = "INTERNAL_ERROR"

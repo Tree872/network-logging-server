@@ -11,7 +11,7 @@ import (
 	"strings"
 )
 
-const MaxProtocolMessageSize int = 4096
+const MaxProtocolMessageSize int = 65536
 
 type Config struct {
 	Host                   string
@@ -238,8 +238,7 @@ func (config Config) Validate() error {
 		return fmt.Errorf("minimum_level is not a supported severity")
 	}
 
-	if config.MaxMessageSize < 1 ||
-		config.MaxMessageSize > MaxProtocolMessageSize {
+	if config.MaxMessageSize < 1 || config.MaxMessageSize > MaxProtocolMessageSize {
 		return fmt.Errorf(
 			"max_message_size must be between 1 and %d",
 			MaxProtocolMessageSize,

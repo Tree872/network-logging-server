@@ -13,6 +13,7 @@ import (
 	"syscall"
 
 	"network-logging-server/internal/config"
+	"network-logging-server/internal/logging"
 	"network-logging-server/internal/server"
 )
 
@@ -34,6 +35,16 @@ func main() {
 		os.Exit(1)
 	}
 
+	var logWriter *logging.Logger
+	logWriter, err = logging.New(
+		serverConfig.LogFile,
+		serverConfig.LogFormat,
+	)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to initialize logger: %v\n", err)
+		os.Exit(1)
+	}
+
 	var address string
 	address = net.JoinHostPort(
 		serverConfig.Host,
@@ -44,6 +55,7 @@ func main() {
 	listener, err = net.Listen("tcp", address)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to start TCP listener: %v\n", err)
+		logWriter.Close()
 		os.Exit(1)
 	}
 
@@ -64,9 +76,21 @@ func main() {
 	)
 	defer stopSignal()
 
-	err = server.Run(listener, shutdownContext, serverConfig.MaxMessageSize)
+	err = server.Run(
+		listener,
+		shutdownContext,
+		serverConfig.MaxMessageSize,
+		logWriter,
+	)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Server error: %v\n", err)
+		logWriter.Close()
+		os.Exit(1)
+	}
+
+	err = logWriter.Close()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to close log file: %v\n", err)
 		os.Exit(1)
 	}
 

@@ -13,6 +13,7 @@ import (
 	"os"
 	"sync"
 
+	"network-logging-server/internal/logging"
 	"network-logging-server/internal/protocol"
 )
 
@@ -30,6 +31,7 @@ func Run(
 	listener net.Listener,
 	shutdownContext context.Context,
 	maxMessageSize int,
+	logWriter *logging.Logger,
 ) error {
 	var activeConnections map[net.Conn]struct{}
 	var connectionMutex sync.Mutex
@@ -51,7 +53,6 @@ func Run(
 		var err error
 
 		connection, err = listener.Accept()
-
 		if err != nil {
 			if shutdownContext.Err() != nil {
 				break
@@ -88,6 +89,7 @@ func Run(
 			clientID,
 			shutdownContext,
 			maxMessageSize,
+			logWriter,
 			activeConnections,
 			&connectionMutex,
 			&handlers,
@@ -118,6 +120,7 @@ func Run(
 // - clientID: A unique identifier for the client connection.
 // - shutdownContext: A context that signals when the server should shut down gracefully.
 // - maxMessageSize: The maximum allowed size for incoming messages from the client.
+// - logWriter: A pointer to the Logger instance used to write log entries.
 // - activeConnections: A map of currently active connections, used to track and manage them.
 // - connectionMutex: A mutex to synchronize access to the activeConnections map.
 // - handlers: A WaitGroup to track the number of active client handlers.
@@ -126,35 +129,33 @@ func handleClient(
 	clientID string,
 	shutdownContext context.Context,
 	maxMessageSize int,
+	logWriter *logging.Logger,
 	activeConnections map[net.Conn]struct{},
 	connectionMutex *sync.Mutex,
 	handlers *sync.WaitGroup,
 ) {
 	defer handlers.Done()
-	// Ensure that the connection is removed from the active connections map and closed when the function exits.
+
 	defer func() {
 		connectionMutex.Lock()
 		delete(activeConnections, connection)
 		connectionMutex.Unlock()
 
 		connection.Close()
-
 		fmt.Printf("Disconnected %s\n", clientID)
 	}()
 
 	var reader *bufio.Reader
 	reader = bufio.NewReaderSize(connection, 4096)
-	// Read data from the connection in a loop until the client disconnects or a shutdown signal is received.
+
 	for {
 		var line []byte
 		var tooLarge bool
 		var err error
 
 		line, tooLarge, err = readRequestLine(reader, maxMessageSize)
-
 		if err != nil {
-			if !errors.Is(err, io.EOF) &&
-				shutdownContext.Err() == nil {
+			if !errors.Is(err, io.EOF) && shutdownContext.Err() == nil {
 				fmt.Fprintf(
 					os.Stderr,
 					"Read error for %s: %v\n",
@@ -162,7 +163,6 @@ func handleClient(
 					err,
 				)
 			}
-
 			return
 		}
 
@@ -176,21 +176,31 @@ func handleClient(
 			var request protocol.Request
 
 			request, err = protocol.ParseRequest(line)
-
 			if err != nil {
 				response.Status = protocol.StatusInvalidMessage
 				response.Error = err.Error()
 			} else {
-				// This status confirms validation only.
-				// File logging will be added later.
-				response.Status = protocol.StatusValidMessage
+				err = logWriter.Write(clientID, request)
+				if err != nil {
+					fmt.Fprintf(
+						os.Stderr,
+						"Log write error for %s: %v\n",
+						clientID,
+						err,
+					)
 
-				fmt.Printf(
-					"Validated request from %s: level=%s service=%s\n",
-					clientID,
-					request.Level,
-					request.Service,
-				)
+					response.Status = protocol.StatusInternalError
+					response.Error = "Could not write log entry"
+				} else {
+					response.Status = protocol.StatusOK
+
+					fmt.Printf(
+						"Logged message from %s: level=%s service=%s\n",
+						clientID,
+						request.Level,
+						request.Service,
+					)
+				}
 			}
 		}
 
@@ -204,7 +214,6 @@ func handleClient(
 					err,
 				)
 			}
-
 			return
 		}
 	}
@@ -237,16 +246,13 @@ func readRequestLine(
 		var err error
 
 		currentByte, err = reader.ReadByte()
-
 		if err != nil {
 			if errors.Is(err, io.EOF) {
 				if totalBytes == 0 {
 					return nil, false, io.EOF
 				}
-
 				return nil, false, io.ErrUnexpectedEOF
 			}
-
 			return nil, false, err
 		}
 
