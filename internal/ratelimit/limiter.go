@@ -1,3 +1,5 @@
+// File: limiter.go
+// Description: This file contains the implementation of a rate limiter for the network logging server.
 package ratelimit
 
 import (
