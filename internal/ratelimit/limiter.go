@@ -20,6 +20,15 @@ type Limiter struct {
 	mutex       sync.Mutex
 }
 
+// Function: New
+// Description:
+// New creates a new Limiter instance with the specified maximum number of messages and time window.
+// It initializes the internal state of the Limiter, including the buckets for tracking message counts per client IP.
+// Parameters:
+// - maxMessages: The maximum number of messages allowed per client within the specified time window.
+// - window: The duration of the time window for rate limiting.
+// Returns:
+// - *Limiter: A pointer to the created Limiter instance.
 func New(maxMessages int, window time.Duration) *Limiter {
 	var limiter Limiter
 
@@ -31,6 +40,13 @@ func New(maxMessages int, window time.Duration) *Limiter {
 	return &limiter
 }
 
+// Function: Allow
+// Description:
+// Allow checks if a client is allowed to send a message based on the rate limit.
+// Parameters:
+// - clientIP: The IP address of the client.
+// Returns:
+// - bool: True if the client is allowed to send a message, false otherwise.
 func (limiter *Limiter) Allow(clientIP string) bool {
 	var now time.Time
 	var clientBucket bucket
