@@ -1,12 +1,19 @@
+// File: server.go
+// Description: This file contains the server logic for the network logging server application.
+// It handles incoming TCP connections, manages client handlers, and ensures graceful shutdown.
 package server
 
 import (
+	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net"
 	"os"
 	"sync"
+
+	"network-logging-server/internal/protocol"
 )
 
 // Function: Run
@@ -19,7 +26,11 @@ import (
 // - shutdownContext: A context that signals when the server should shut down gracefully.
 // Returns:
 // - error: An error if the server encounters an issue while running.
-func Run(listener net.Listener, shutdownContext context.Context) error {
+func Run(
+	listener net.Listener,
+	shutdownContext context.Context,
+	maxMessageSize int,
+) error {
 	var activeConnections map[net.Conn]struct{}
 	var connectionMutex sync.Mutex
 	var handlers sync.WaitGroup
@@ -30,12 +41,11 @@ func Run(listener net.Listener, shutdownContext context.Context) error {
 	clientNumber = 0
 	serverError = nil
 
-	// Close the listener when shutdown is requested.
 	go func() {
 		<-shutdownContext.Done()
 		listener.Close()
 	}()
-	// Accept incoming connections in a loop until shutdown is requested.
+
 	for {
 		var connection net.Conn
 		var err error
@@ -51,13 +61,13 @@ func Run(listener net.Listener, shutdownContext context.Context) error {
 			break
 		}
 
-		// Do not start a new handler during shutdown.
 		if shutdownContext.Err() != nil {
 			connection.Close()
 			break
 		}
-		// Assign a unique client ID and start a new goroutine to handle the connection.
+
 		clientNumber++
+
 		var clientID string
 		clientID = fmt.Sprintf("client-%03d", clientNumber)
 
@@ -77,14 +87,13 @@ func Run(listener net.Listener, shutdownContext context.Context) error {
 			connection,
 			clientID,
 			shutdownContext,
+			maxMessageSize,
 			activeConnections,
 			&connectionMutex,
 			&handlers,
 		)
 	}
 
-	// Close every remaining client connection so blocked handlers
-	// can finish their reads and exit.
 	connectionMutex.Lock()
 
 	var connection net.Conn
@@ -94,7 +103,6 @@ func Run(listener net.Listener, shutdownContext context.Context) error {
 
 	connectionMutex.Unlock()
 
-	// Wait until every client handler has finished.
 	handlers.Wait()
 
 	return serverError
@@ -109,6 +117,7 @@ func Run(listener net.Listener, shutdownContext context.Context) error {
 // - connection: The net.Conn representing the client connection.
 // - clientID: A unique identifier for the client connection.
 // - shutdownContext: A context that signals when the server should shut down gracefully.
+// - maxMessageSize: The maximum allowed size for incoming messages from the client.
 // - activeConnections: A map of currently active connections, used to track and manage them.
 // - connectionMutex: A mutex to synchronize access to the activeConnections map.
 // - handlers: A WaitGroup to track the number of active client handlers.
@@ -116,12 +125,13 @@ func handleClient(
 	connection net.Conn,
 	clientID string,
 	shutdownContext context.Context,
+	maxMessageSize int,
 	activeConnections map[net.Conn]struct{},
 	connectionMutex *sync.Mutex,
 	handlers *sync.WaitGroup,
 ) {
 	defer handlers.Done()
-	// Ensure the connection is removed from the active connections map and closed when the handler exits.
+	// Ensure that the connection is removed from the active connections map and closed when the function exits.
 	defer func() {
 		connectionMutex.Lock()
 		delete(activeConnections, connection)
@@ -132,25 +142,134 @@ func handleClient(
 		fmt.Printf("Disconnected %s\n", clientID)
 	}()
 
-	var bytesReceived int64
-	var err error
+	var reader *bufio.Reader
+	reader = bufio.NewReaderSize(connection, 4096)
+	// Read data from the connection in a loop until the client disconnects or a shutdown signal is received.
+	for {
+		var line []byte
+		var tooLarge bool
+		var err error
 
-	bytesReceived, err = io.Copy(io.Discard, connection)
-	// If the connection is closed by the client, io.Copy will return an error.
-	if err != nil && shutdownContext.Err() == nil {
-		fmt.Fprintf(
-			os.Stderr,
-			"Read error for %s: %v\n",
-			clientID,
-			err,
-		)
+		line, tooLarge, err = readRequestLine(reader, maxMessageSize)
+
+		if err != nil {
+			if !errors.Is(err, io.EOF) &&
+				shutdownContext.Err() == nil {
+				fmt.Fprintf(
+					os.Stderr,
+					"Read error for %s: %v\n",
+					clientID,
+					err,
+				)
+			}
+
+			return
+		}
+
+		var response protocol.Response
+		response.ClientID = clientID
+
+		if tooLarge {
+			response.Status = protocol.StatusMessageTooLarge
+			response.Error = "Request exceeds maximum size"
+		} else {
+			var request protocol.Request
+
+			request, err = protocol.ParseRequest(line)
+
+			if err != nil {
+				response.Status = protocol.StatusInvalidMessage
+				response.Error = err.Error()
+			} else {
+				// This status confirms validation only.
+				// File logging will be added later.
+				response.Status = protocol.StatusValidMessage
+
+				fmt.Printf(
+					"Validated request from %s: level=%s service=%s\n",
+					clientID,
+					request.Level,
+					request.Service,
+				)
+			}
+		}
+
+		err = protocol.WriteResponse(connection, response)
+		if err != nil {
+			if shutdownContext.Err() == nil {
+				fmt.Fprintf(
+					os.Stderr,
+					"Response error for %s: %v\n",
+					clientID,
+					err,
+				)
+			}
+
+			return
+		}
 	}
-	// If the client sent any data before disconnecting, log the number of bytes received.
-	if bytesReceived > 0 {
-		fmt.Printf(
-			"%s disconnected after sending %d raw bytes\n",
-			clientID,
-			bytesReceived,
-		)
+}
+
+// Function: readRequestLine
+// Description:
+// readRequestLine reads a single line of input from the provided bufio.Reader.
+// It enforces a maximum message size and returns an error if the line exceeds this size.
+// The function also handles end-of-file (EOF) and unexpected EOF conditions.
+// Parameters:
+// - reader: A bufio.Reader to read input from.
+// - maxMessageSize: The maximum allowed size for the input line.
+// Returns:
+// - []byte: The read line of input, excluding the newline character.
+// - bool: A flag indicating whether the line exceeded the maximum size.
+// - error: An error if reading fails or if EOF is encountered unexpectedly.
+func readRequestLine(
+	reader *bufio.Reader,
+	maxMessageSize int,
+) ([]byte, bool, error) {
+	var line []byte
+	var totalBytes int
+	var tooLarge bool
+
+	line = make([]byte, 0, maxMessageSize)
+
+	for {
+		var currentByte byte
+		var err error
+
+		currentByte, err = reader.ReadByte()
+
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				if totalBytes == 0 {
+					return nil, false, io.EOF
+				}
+
+				return nil, false, io.ErrUnexpectedEOF
+			}
+
+			return nil, false, err
+		}
+
+		totalBytes++
+
+		if totalBytes > maxMessageSize {
+			tooLarge = true
+		} else {
+			line = append(line, currentByte)
+		}
+
+		if currentByte == '\n' {
+			if tooLarge {
+				return nil, true, nil
+			}
+
+			line = line[:len(line)-1]
+
+			if len(line) > 0 && line[len(line)-1] == '\r' {
+				line = line[:len(line)-1]
+			}
+
+			return line, false, nil
+		}
 	}
 }

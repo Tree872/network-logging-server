@@ -64,7 +64,7 @@ func main() {
 	)
 	defer stopSignal()
 
-	err = server.Run(listener, shutdownContext)
+	err = server.Run(listener, shutdownContext, serverConfig.MaxMessageSize)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Server error: %v\n", err)
 		os.Exit(1)

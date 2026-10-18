@@ -11,7 +11,7 @@ import (
 	"strings"
 )
 
-const MaxProtocolMessageSize = 4096
+const MaxProtocolMessageSize int = 4096
 
 type Config struct {
 	Host                   string
@@ -24,11 +24,10 @@ type Config struct {
 	RateLimitWindowSeconds int
 }
 
-// Fuction: Load
-// Description: Load the configuration from a file and return a Config struct.
-//
-//	Validate format errors, missing required settings, and unknown settings.
-//
+// Function: Load
+// Description:
+// Load the configuration from a file and return a Config struct.
+// Validate format errors, missing required settings, and unknown settings.
 // Parameters:
 // - configPath: The path to the configuration file.
 // Returns:
@@ -36,33 +35,39 @@ type Config struct {
 // - error: An error if the configuration could not be loaded or validated.
 func Load(configPath string) (Config, error) {
 	var config Config
+	var absoluteConfigPath string
+	var err error
 
-	absoluteConfigPath, err := filepath.Abs(configPath)
+	absoluteConfigPath, err = filepath.Abs(configPath)
 	if err != nil {
 		return config, fmt.Errorf("resolve configuration path: %w", err)
 	}
 
-	configFile, err := os.Open(absoluteConfigPath)
+	var configFile *os.File
+	configFile, err = os.Open(absoluteConfigPath)
 	if err != nil {
 		return config, fmt.Errorf("open configuration file %q: %w", absoluteConfigPath, err)
 	}
 	defer configFile.Close()
 
-	values := make(map[string]string)
+	var values map[string]string = make(map[string]string)
 
-	scanner := bufio.NewScanner(configFile)
-	lineNumber := 0
+	var scanner *bufio.Scanner = bufio.NewScanner(configFile)
+	var lineNumber int = 0
 
 	for scanner.Scan() {
 		lineNumber++
 
-		line := strings.TrimSpace(scanner.Text())
+		var line string = strings.TrimSpace(scanner.Text())
 
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
 
-		key, value, found := strings.Cut(line, "=")
+		var key string
+		var value string
+		var found bool
+		key, value, found = strings.Cut(line, "=")
 		if !found {
 			return config, fmt.Errorf(
 				"configuration line %d: expected key=value",
@@ -88,7 +93,9 @@ func Load(configPath string) (Config, error) {
 			)
 		}
 
-		if _, exists := values[key]; exists {
+		var exists bool
+		_, exists = values[key]
+		if exists {
 			return config, fmt.Errorf(
 				"configuration line %d: duplicate setting %q",
 				lineNumber,
@@ -99,11 +106,12 @@ func Load(configPath string) (Config, error) {
 		values[key] = value
 	}
 
-	if err := scanner.Err(); err != nil {
-		return config, fmt.Errorf("read configuration file: %w", err)
+	var scanErr error
+	if scanErr = scanner.Err(); scanErr != nil {
+		return config, fmt.Errorf("read configuration file: %w", scanErr)
 	}
 
-	allowedKeys := map[string]bool{
+	var allowedKeys map[string]bool = map[string]bool{
 		"host":                      true,
 		"port":                      true,
 		"log_file":                  true,
@@ -114,13 +122,14 @@ func Load(configPath string) (Config, error) {
 		"rate_limit_window_seconds": true,
 	}
 
-	for key := range values {
+	var key string
+	for key = range values {
 		if !allowedKeys[key] {
 			return config, fmt.Errorf("unknown configuration setting %q", key)
 		}
 	}
 
-	requiredKeys := []string{
+	var requiredKeys []string = []string{
 		"host",
 		"port",
 		"log_file",
@@ -131,8 +140,10 @@ func Load(configPath string) (Config, error) {
 		"rate_limit_window_seconds",
 	}
 
-	for _, key := range requiredKeys {
-		if _, exists := values[key]; !exists {
+	for _, key = range requiredKeys {
+		var exists bool
+		_, exists = values[key]
+		if !exists {
 			return config, fmt.Errorf(
 				"missing required configuration setting %q",
 				key,
@@ -170,11 +181,12 @@ func Load(configPath string) (Config, error) {
 		)
 	}
 
-	if err := config.Validate(); err != nil {
-		return config, err
+	var validationErr error
+	if validationErr = config.Validate(); validationErr != nil {
+		return config, validationErr
 	}
 
-	configDirectory := filepath.Dir(absoluteConfigPath)
+	var configDirectory string = filepath.Dir(absoluteConfigPath)
 
 	if !filepath.IsAbs(config.LogFile) {
 		config.LogFile = filepath.Join(configDirectory, config.LogFile)
@@ -211,7 +223,7 @@ func (config Config) Validate() error {
 		return fmt.Errorf("log_format must be text or jsonl")
 	}
 
-	validLevels := map[string]bool{
+	var validLevels map[string]bool = map[string]bool{
 		"EMERGENCY": true,
 		"ALERT":     true,
 		"CRITICAL":  true,
