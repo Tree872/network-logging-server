@@ -81,7 +81,10 @@ func main() {
 		shutdownContext,
 		serverConfig.MaxMessageSize,
 		logWriter,
+		serverConfig.RateLimitMessages,
+		serverConfig.RateLimitWindowSeconds,
 	)
+
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Server error: %v\n", err)
 		logWriter.Close()

@@ -12,9 +12,11 @@ import (
 	"net"
 	"os"
 	"sync"
+	"time"
 
 	"network-logging-server/internal/logging"
 	"network-logging-server/internal/protocol"
+	"network-logging-server/internal/ratelimit"
 )
 
 // Function: Run
@@ -25,6 +27,10 @@ import (
 // Parameters:
 // - listener: The net.Listener to accept incoming TCP connections.
 // - shutdownContext: A context that signals when the server should shut down gracefully.
+// - maxMessageSize: The maximum allowed size for incoming messages from clients.
+// - logWriter: A pointer to the Logger instance used to write log entries.
+// - rateLimitMessages: The maximum number of messages allowed per client within the rate limit window.
+// - rateLimitWindowSeconds: The duration of the rate limit window in seconds.
 // Returns:
 // - error: An error if the server encounters an issue while running.
 func Run(
@@ -32,16 +38,23 @@ func Run(
 	shutdownContext context.Context,
 	maxMessageSize int,
 	logWriter *logging.Logger,
+	rateLimitMessages int,
+	rateLimitWindowSeconds int,
 ) error {
 	var activeConnections map[net.Conn]struct{}
 	var connectionMutex sync.Mutex
 	var handlers sync.WaitGroup
 	var clientNumber int
 	var serverError error
+	var limiter *ratelimit.Limiter
 
 	activeConnections = make(map[net.Conn]struct{})
 	clientNumber = 0
 	serverError = nil
+	limiter = ratelimit.New(
+		rateLimitMessages,
+		time.Duration(rateLimitWindowSeconds)*time.Second,
+	)
 
 	go func() {
 		<-shutdownContext.Done()
@@ -90,6 +103,7 @@ func Run(
 			shutdownContext,
 			maxMessageSize,
 			logWriter,
+			limiter,
 			activeConnections,
 			&connectionMutex,
 			&handlers,
@@ -121,6 +135,7 @@ func Run(
 // - shutdownContext: A context that signals when the server should shut down gracefully.
 // - maxMessageSize: The maximum allowed size for incoming messages from the client.
 // - logWriter: A pointer to the Logger instance used to write log entries.
+// - limiter: A pointer to the Limiter instance used to enforce rate limiting for incoming requests.
 // - activeConnections: A map of currently active connections, used to track and manage them.
 // - connectionMutex: A mutex to synchronize access to the activeConnections map.
 // - handlers: A WaitGroup to track the number of active client handlers.
@@ -130,6 +145,7 @@ func handleClient(
 	shutdownContext context.Context,
 	maxMessageSize int,
 	logWriter *logging.Logger,
+	limiter *ratelimit.Limiter,
 	activeConnections map[net.Conn]struct{},
 	connectionMutex *sync.Mutex,
 	handlers *sync.WaitGroup,
@@ -144,6 +160,16 @@ func handleClient(
 		connection.Close()
 		fmt.Printf("Disconnected %s\n", clientID)
 	}()
+
+	var clientIP string
+	var splitErr error
+
+	clientIP, _, splitErr = net.SplitHostPort(
+		connection.RemoteAddr().String(),
+	)
+	if splitErr != nil {
+		clientIP = connection.RemoteAddr().String()
+	}
 
 	var reader *bufio.Reader
 	reader = bufio.NewReaderSize(connection, 4096)
@@ -169,7 +195,10 @@ func handleClient(
 		var response protocol.Response
 		response.ClientID = clientID
 
-		if tooLarge {
+		if !limiter.Allow(clientIP) {
+			response.Status = protocol.StatusRateLimited
+			response.Error = "Rate limit exceeded; try again after the configured window"
+		} else if tooLarge {
 			response.Status = protocol.StatusMessageTooLarge
 			response.Error = "Request exceeds maximum size"
 		} else {

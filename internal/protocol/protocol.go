@@ -29,6 +29,7 @@ const (
 	StatusInvalidMessage  = "INVALID_MESSAGE"
 	StatusMessageTooLarge = "MESSAGE_TOO_LARGE"
 	StatusInternalError   = "INTERNAL_ERROR"
+	StatusRateLimited     = "RATE_LIMITED"
 )
 
 // Function: IsValid
